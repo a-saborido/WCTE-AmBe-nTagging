@@ -34,7 +34,7 @@ def observable_bin_edges(
         padding = max(0.5, 0.05 * abs(low))
         return np.linspace(low - padding, high + padding, n_bins + 1)
 
-    # Give integer-valued observables such as N10 and NhighQ one centered bin
+    # Give integer-valued observables such as Nn and NhighQ one centered bin
     # per integer when their range is modest.
     integer_valued = np.allclose(values, np.rint(values), rtol=0.0, atol=1e-9)
     if integer_valued and high - low <= n_bins:

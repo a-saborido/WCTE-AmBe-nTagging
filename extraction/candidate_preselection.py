@@ -42,8 +42,8 @@ from .config import (
     DEFAULT_MULTILATERATION_MIN_HITS,
     DEFAULT_MULTILATERATION_REFINE_HALFWIDTH_CM,
     DEFAULT_MULTILATERATION_XYZ_BOUNDS_CM,
-    DEFAULT_N10_CUT,
-    DEFAULT_N10_WINDOW_NS,
+    DEFAULT_NN_CUT,
+    DEFAULT_NN_WINDOW_NS,
     DEFAULT_N300_WINDOW_NS,
     DEFAULT_NMAX200_CUT,
     DEFAULT_NMAX200_WINDOW_NS,
@@ -86,7 +86,7 @@ from .observables.topology import calculate_cherenkov_topology_observables
 from .observables.vertex import (
     calculate_bonsai_vertex_observables,
     double_scan_grid_counts,
-    greedy_n10_candidates,
+    greedy_nn_candidates,
     min_subset_rms,
     refit_vertex_by_multilateration_grid,
 )
@@ -148,6 +148,7 @@ def write_candidate_hit_info_root(root_rows: List[Dict], out_path: Path) -> Path
         "vertex_y",
         "vertex_z",
         "vertex_t",
+        "fpdist",
         "prompt_time_ns",
         "candidate_tcorr_center_ns",
         "dominant_capture_fraction",
@@ -391,10 +392,10 @@ def event_to_candidates(
         time_s = time[search_idx]
         tcorr_s = time_s - np.linalg.norm(pos_s - prompt_vertex_cm[None, :], axis=1) / c_water
 
-        cand_defs = greedy_n10_candidates(
+        cand_defs = greedy_nn_candidates(
             tcorr_s,
-            width_ns=args.n10_window_ns,
-            n10_cut=args.n10_cut,
+            width_ns=args.nn_window_ns,
+            nn_cut=args.nn_cut,
             max_candidates=args.max_candidates_per_prompt,
         )
         if not cand_defs:
@@ -409,7 +410,7 @@ def event_to_candidates(
             if len(raw_global) == 0:
                 continue
 
-            # Most repeated candidates are already identical at the raw N10
+            # Most repeated candidates are already identical at the raw Nn
             # stage. Skipping them here avoids the expensive vertex scan.
             raw_hitset_key = candidate_hitset_key(w_evt, raw_global)
             if raw_hitset_key in seen_raw_candidate_hitsets:
@@ -421,7 +422,7 @@ def event_to_candidates(
             # in corrected time. If the peak is too sparse, fall back to all
             # delayed-search hits so the refit remains defined.
             context = np.abs(tcorr_s - cand_center) <= args.fit_context_ns
-            if np.sum(context) < max(args.n10_cut + 1, 6):
+            if np.sum(context) < max(args.nn_cut + 1, 6):
                 context = np.ones_like(tcorr_s, dtype=bool)
             context_idx = np.flatnonzero(context)
             time_c = time_s[context_idx]
@@ -436,12 +437,12 @@ def event_to_candidates(
                 np.isin(context_idx, np.asarray(cand["idx_local"], dtype=int))
             )
 
-            xfit, n10p, best_context_loc, trmsp = refit_vertex_by_multilateration_grid(
+            xfit, nn_refit, best_context_loc, trmsp = refit_vertex_by_multilateration_grid(
                 time_c,
                 pos_c,
                 prompt_vertex_cm,
                 c_water,
-                args.n10_window_ns,
+                args.nn_window_ns,
                 fit_hit_indices=seed_context_loc,
                 fit_channel_keys=channel_keys_c,
                 xyz_bounds_cm=args.multilateration_xyz_bounds_cm,
@@ -475,7 +476,7 @@ def event_to_candidates(
             vertex_t = float(np.nanmean(final_tcorr)) if len(final_tcorr) else np.nan
 
             # BONSAI receives a broader neighborhood around the corrected-time
-            # peak than the final N10 hit set used for the local vertex.
+            # peak than the final Nn hit set used for the local vertex.
             bonsai_local_mask = np.abs(tcorr_s - cand_center) <= 0.5 * args.bonsai_window_ns
             bonsai_global = search_idx[bonsai_local_mask]
             counters["bonsai_fits_attempted"] += 1
@@ -492,7 +493,7 @@ def event_to_candidates(
                 wall=wall,
             )
 
-            # Vertex determination observables are built above: initial N10/trms,
+            # Vertex determination observables are built above: initial Nn/trms,
             # refit improvement, fitted wall distance, BONSAI consistency, and
             # tight subcluster timing.
             # N300 is computed here but categorized as noise characterization below:
@@ -565,6 +566,7 @@ def event_to_candidates(
                 last_source_entry = -1
 
             candidate_raw_mean_time = float(np.nanmean(time[final_global])) if n_final else np.nan
+            fpdist = float(np.linalg.norm(xfit - prompt_vertex_cm))
             row = {
                 "event_number": int(event_number),
                 "candidate_id": int(candidate_id),
@@ -595,11 +597,11 @@ def event_to_candidates(
                 "bonsai_n_window": int(bonsai_fit.n_window),
                 "bonsai_fit_goodness": float(bonsai_fit.fit_goodness),
                 "bonsai_time_goodness": float(bonsai_fit.time_goodness),
-                "N10": int(cand["N10"]),
+                "Nn": int(cand["Nn"]),
                 "trms": init_trms,
-                "fpdist": float(np.linalg.norm(xfit - prompt_vertex_cm)),
+                "fpdist": fpdist,
                 "delta_trms": float(init_trms - trmsp),
-                "delta_N10": int(n10p - cand["N10"]),
+                "delta_Nn": int(nn_refit - cand["Nn"]),
                 "fwall": wall.distance_to_wall(xfit),
                 "trms3": min_subset_rms(final_tcorr, 3),
                 "trms6": min_subset_rms(final_tcorr, 6),
@@ -641,6 +643,7 @@ def event_to_candidates(
                     "vertex_y": float(xfit[1]),
                     "vertex_z": float(xfit[2]),
                     "vertex_t": vertex_t,
+                    "fpdist": fpdist,
                     "event_number": int(event_number),
                     "candidate_id": int(candidate_id),
                     "prompt_id": int(prompt.prompt_id),
@@ -894,7 +897,7 @@ def format_grouped_counter_summary(grouped: Dict[str, Dict[str, int]]) -> str:
         ),
         "capture_candidates_total": "Final capture candidate rows written out.",
         "raw_capture_candidates_skipped_by_hitset": (
-            "Repeated raw N10 hit clusters skipped before vertex fitting."
+            "Repeated raw Nn hit clusters skipped before vertex fitting."
         ),
         "capture_candidates_deduplicated_by_hitset": (
             "Exact repeated final hit clusters removed before writing."
@@ -1149,6 +1152,7 @@ def extract_candidates(args: argparse.Namespace) -> Path:
             ],
             "label_branch": "label",
             "vertex_branches": ["vertex_x", "vertex_y", "vertex_z", "vertex_t"],
+            "distance_branches": ["fpdist"],
             "excluded_standard_branches": ["eventType", "energy", "ncap_target"],
         },
         "geometry": geometry.summary(),
@@ -1285,12 +1289,12 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
         help="Locally veto delayed-search 200 ns windows with at least this many hits",
     )
     p.add_argument("--continuous-noise-ns", type=float, default=DEFAULT_CONTINUOUS_NOISE_NS)
-    p.add_argument("--n10-window-ns", type=float, default=DEFAULT_N10_WINDOW_NS)
+    p.add_argument("--nn-window-ns", type=float, default=DEFAULT_NN_WINDOW_NS)
     p.add_argument(
-        "--n10-cut",
+        "--nn-cut",
         type=int,
-        default=DEFAULT_N10_CUT,
-        help="Keep candidates with N10 > this value",
+        default=DEFAULT_NN_CUT,
+        help="Keep candidates with Nn > this value",
     )
     p.add_argument(
         "--max-candidates-per-prompt",
@@ -1337,7 +1341,7 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
         "--multilateration-earliest-per-channel",
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_MULTILATERATION_EARLIEST_PER_CHANNEL,
-        help="Keep only the earliest N10-burst hit per slot/PMT during the grid fit",
+        help="Keep only the earliest Nn-burst hit per slot/PMT during the grid fit",
     )
     p.add_argument("--n300-window-ns", type=float, default=DEFAULT_N300_WINDOW_NS)
 

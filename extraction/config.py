@@ -55,9 +55,9 @@ DEFAULT_PROMPT_ISOLATION_NS = 200.0
 DEFAULT_NMAX200_WINDOW_NS = 200.0
 DEFAULT_NMAX200_CUT = 50
 DEFAULT_CONTINUOUS_NOISE_NS = 6000.0
-DEFAULT_N10_WINDOW_NS = 10.0
-DEFAULT_N10_CUT = 5
-DEFAULT_MAX_CANDIDATES_PER_PROMPT = 50
+DEFAULT_NN_WINDOW_NS = 5.0 # old N10
+DEFAULT_NN_CUT = 5
+DEFAULT_MAX_CANDIDATES_PER_PROMPT = 50 # The most populated ones are kept
 
 # WCTE is much smaller than SK.
 DEFAULT_FIT_CONTEXT_NS = 25.0
@@ -71,9 +71,9 @@ DEFAULT_MULTILATERATION_XYZ_BOUNDS_CM = 120.0
 DEFAULT_MULTILATERATION_COARSE_STEP_CM = 10.0
 DEFAULT_MULTILATERATION_FINE_STEP_CM = 1.0
 DEFAULT_MULTILATERATION_REFINE_HALFWIDTH_CM = 20.0
-DEFAULT_MULTILATERATION_DT_CUT_NS = 10.0
+DEFAULT_MULTILATERATION_DT_CUT_NS = 5.0
 DEFAULT_MULTILATERATION_GRID_CHUNK_SIZE = 4096
-DEFAULT_MULTILATERATION_MIN_HITS = 6
+DEFAULT_MULTILATERATION_MIN_HITS = 5
 DEFAULT_MULTILATERATION_EARLIEST_PER_CHANNEL = True
 
 # Cherenkov/topology and noise-observable tuning.
@@ -95,16 +95,21 @@ DEFAULT_MIN_CAPTURE_HITS_ABSOLUTE = 4
 
 # Vertex determination: timing compactness and quality of the local vertex scan.
 VERTEX_OBSERVABLE_COLUMNS = [
-    "N10",
+    "Nn",
     "trms",
     "fpdist",
     "delta_trms",
-    "delta_N10",
+    "delta_Nn",
     "fwall",
     "trms3",
     "trms6",
     "Bpdist",
     "Bwall",
+]
+
+# Candidate timing relative to the prompt that opened the delayed search.
+TIMING_OBSERVABLE_COLUMNS = [
+    "candidate_time_from_prompt_ns",
 ]
 
 # Cherenkov event topology: angular pattern and geometric light-yield proxy.
@@ -129,6 +134,7 @@ NOISE_OBSERVABLE_COLUMNS = [
 
 OBSERVABLE_GROUPS = {
     "vertex_determination": VERTEX_OBSERVABLE_COLUMNS,
+    "candidate_timing": TIMING_OBSERVABLE_COLUMNS,
     "cherenkov_event_topology": TOPOLOGY_OBSERVABLE_COLUMNS,
     "noise_characterization": NOISE_OBSERVABLE_COLUMNS,
 }

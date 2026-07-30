@@ -11,7 +11,7 @@ The pipeline works in three nested units:
 
 1. Readout window: one ROOT entry containing signal plus background hits.
 2. Prompt candidate: a scintillation-like peak tagged inside the anchor window.
-3. Delayed candidate: an N10-like cluster found after a tagged prompt.
+3. Delayed candidate: an Nn-like cluster found after a tagged prompt.
 
 For each prompt, delayed candidates are searched in the following 300
 microseconds. If the search crosses into the next ROOT entry, the next window is
@@ -56,7 +56,7 @@ tests/                        Fast regression tests for both stages
 ```
 
 The main tuning placeholders are centralized in `extraction/config.py`: prompt cuts,
-delayed-search timing, N10/Nmax200 settings, double-grid multilateration
+delayed-search timing, Nn/Nmax200 settings, double-grid multilateration
 settings, opening-angle thresholds, and label thresholds.
 
 ## Geometry Lookup
@@ -128,8 +128,9 @@ python wcte_ambe_neutron_bdt.py extract \
 Outputs:
 
 - `candidates.parquet` or `candidates.csv`
-- `candidates.root`: final candidate hit information in a `THits` layout that can
-  be used to train point-cloud methods.
+- `candidates.root`: final candidate hit information in a `THits` layout,
+  including the fitted vertex and `fpdist`, that can be used to train
+  point-cloud methods.
 - `extraction_summary.json`
 - `wall_estimator.json`
 - `obs_plots/*.png`: original aggregate neutron-capture versus accidental
@@ -213,13 +214,15 @@ The labeled prediction evaluation writes:
 
 Vertex determination:
 
-- `N10`, `trms`: compactness of the initial time-of-flight-corrected peak.
+- `Nn`, `trms`: compactness of the initial time-of-flight-corrected peak.
+  `Nn` counts hits in the configured `--nn-window-ns` timing window.
 - `fpdist`: distance between the prompt vertex and fitted delayed vertex.
 - `delta_trms`: timing improvement after the local vertex scan.
-- `delta_N10`: signed change `N10′ - N10`; negative values are retained.
+- `delta_Nn`: signed change between the refitted and initial `Nn`; negative
+  values are retained.
 - `fwall`: distance to the current cylindrical wall proxy.
 - `trms3`, `trms6`: tight subcluster timing inside the final candidate.
-- `Bpdist`: distance between the independent BONSAI and local N10 vertices.
+- `Bpdist`: distance between the independent BONSAI and local Nn vertices.
 - `Bwall`: distance from the BONSAI vertex to the wall proxy.
 
 Cherenkov event topology:
@@ -267,7 +270,7 @@ Start with `extraction_summary.json`. The most useful fields are:
   final hit-set de-duplication.
 - `preselection.capture_candidates_total`: final de-duplicated capture candidate
   rows written out.
-- `preselection.raw_capture_candidates_skipped_by_hitset`: repeated raw N10 hit
+- `preselection.raw_capture_candidates_skipped_by_hitset`: repeated raw Nn hit
   clusters skipped before the expensive vertex refit.
 - `preselection.capture_candidates_deduplicated_by_hitset`: repeated final hit
   clusters removed before writing.
@@ -291,7 +294,8 @@ candidate, not one readout window. Important columns include:
   prompt-tagging metadata. The timestamp is raw readout time; `tRMS` and
   `tmean` use fixed-source TOF-corrected hit times.
 - `candidate_time_from_prompt_ns`: raw mean time of the final delayed-candidate
-  hits minus `prompt_time_ns`.
+  hits minus `prompt_time_ns`; this is also included as a timing BDT
+  observable.
 - `candidate_first_window_offset`, `candidate_last_window_offset`: whether the
   candidate used hits from the anchor window only (`0`) or later windows (`1`,
   `2`, ...).

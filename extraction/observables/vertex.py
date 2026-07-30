@@ -22,7 +22,7 @@ def calculate_bonsai_vertex_observables(
     Calculate the BONSAI-related observables.
 
     Bpdist is the Euclidean separation between the independent BONSAI vertex
-    and the local N10-scan vertex. Bwall is the shortest distance from the
+    and the local Nn-scan vertex. Bwall is the shortest distance from the
     BONSAI vertex to the current detector-wall model.
     """
     xbonsai = np.asarray(xbonsai_cm, dtype=float)
@@ -42,7 +42,7 @@ def best_window_indices(times: np.ndarray, width_ns: float) -> Tuple[int, np.nda
     """
     Find the densest half-open [t0, t0 + width_ns) timing window.
 
-    This is the core primitive behind N10. The half-open convention avoids
+    This is the core primitive behind Nn. The half-open convention avoids
     double-counting hits exactly on a boundary when adjacent trial windows have
     nearly identical start times. Ties are resolved elsewhere with tRMS.
     """
@@ -81,37 +81,38 @@ def best_window_indices(times: np.ndarray, width_ns: float) -> Tuple[int, np.nda
     return int(best_count), loc.astype(int), t0, t1, float(best_rms)
 
 
-def greedy_n10_candidates(
+def greedy_nn_candidates(
     t_corr: np.ndarray,
     width_ns: float = 10.0,
-    n10_cut: int = 5,
+    nn_cut: int = 5,
     max_candidates: int = 50,
 ) -> List[Dict]:
     """
-    Greedily find non-overlapping local N10 maxima in corrected time.
+    Greedily find non-overlapping local Nn maxima in corrected time.
 
-    N10 is the number of hits in the best 10 ns window after correcting hit
-    times for photon travel from a trial vertex. A capture candidate is kept
-    only when N10 is greater than the configured cut, so the default cut of 5
-    means at least 6 hits. After a candidate is found, its hits are removed so
-    the same peak is not returned repeatedly with slightly shifted windows.
+    Nn is the number of hits in the best configured-width window after
+    correcting hit times for photon travel from a trial vertex. A capture
+    candidate is kept only when Nn is greater than the configured cut, so the
+    default cut of 5 means at least 6 hits. After a candidate is found, its hits
+    are removed so the same peak is not returned repeatedly with slightly
+    shifted windows.
     """
     remaining = np.flatnonzero(np.isfinite(t_corr)).astype(int)
     out: List[Dict] = []
 
     for _ in range(max_candidates):
-        if len(remaining) <= n10_cut:
+        if len(remaining) <= nn_cut:
             break
 
         sub_t = t_corr[remaining]
         count, sub_loc, t0, t1, rms = best_window_indices(sub_t, width_ns)
-        if count <= n10_cut:
+        if count <= nn_cut:
             break
 
         loc = remaining[sub_loc]
         out.append(
             {
-                "N10": int(count),
+                "Nn": int(count),
                 "idx_local": loc.astype(int),
                 "t0_corr": float(t0),
                 "t1_corr": float(t1),
@@ -133,7 +134,7 @@ def min_subset_rms(times: np.ndarray, k: int) -> float:
 
     For one-dimensional times, the subset with the smallest RMS is contiguous
     after sorting, so this exact scan avoids a combinatorial search. trms3 and
-    trms6 are sensitive to very compact subclusters, even when the full N10
+    trms6 are sensitive to very compact subclusters, even when the full Nn
     group contains extra accidental hits.
     """
     t = np.sort(np.asarray(times, dtype=float))
@@ -252,12 +253,12 @@ def refit_vertex_by_multilateration_grid(
     wall_margin_cm: float = 0.0,
 ) -> Tuple[np.ndarray, int, np.ndarray, float]:
     """
-    Fit xfit with the ACES-style coarse+fine grid, then recompute N10.
+    Fit xfit with the coarse+fine grid, then recompute Nn.
 
-    The grid objective is the one used by ``functions_multilateration``: use the
-    original N10 burst as timing constraints, subtract TOF for every trial
+    The grid objective is : 
+    use the original Nn burst as timing constraints, subtract TOF for every trial
     vertex, center the corrected times with their median, and minimize the RMS
-    of those median residuals. After xfit is chosen, the best N10 window is
+    of those median residuals. After xfit is chosen, the best Nn window is
     recomputed from the full local context at that fitted vertex.
     """
     times_ns = np.asarray(times_ns, dtype=float)

@@ -26,7 +26,7 @@ The candidate-building sequence is:
    search to continue into following readout windows after the 7.75 us gap.
 3. Locally veto dense delayed-time bursts using the `Nmax200` rule.
 4. Remove close repeated same-PMT hits using the continuous-noise cleaning.
-5. Find local delayed clusters using `N10`.
+5. Find local delayed clusters using `Nn`.
 6. Refit a local delayed vertex with a small WCTE-sized scan around the prompt
    vertex.
 7. Fit an independent BONSAI vertex from the cleaned 1.3 us candidate
@@ -72,50 +72,51 @@ These observables describe how well the delayed hit cluster can be localized in
 space and time. They are implemented in `vertex.py` and assembled in
 `candidate_preselection.py`.
 
-### `N10`
+### `Nn`
 
-`N10` is the number of hits in the densest 10 ns half-open corrected-time
-window:
+`Nn` is the number of hits in the densest half-open corrected-time window. The
+window width is set by `nn_window_ns`:
 
 ```text
-[t0, t0 + 10 ns)
+[t0, t0 + nn_window_ns)
 ```
 
-The initial `N10` candidate search is performed after correcting delayed-search
-hits to the prompt vertex. A candidate is kept only if `N10 > n10_cut`. With the
-default `n10_cut = 5`, this means at least 6 hits in the best 10 ns window.
+The initial `Nn` candidate search is performed after correcting delayed-search
+hits to the prompt vertex. A candidate is kept only if `Nn > nn_cut`. With the
+default `nn_window_ns = 10` and `nn_cut = 5`, this means at least 6 hits in the
+best 10 ns window.
 
 Why it helps:
 
 - Neutron-capture gamma cascades produce a compact burst of delayed light.
-- Random backgrounds are less likely to pile many hits into the same
-  time-of-flight-corrected 10 ns window.
+- Random backgrounds are less likely to pile many hits into the same compact
+  time-of-flight-corrected window.
 
 Subtleties:
 
 - The window is half-open to avoid boundary double-counting.
 - If two windows have the same hit count, the one with smaller `trms` is
   preferred.
-- The stored `N10` is the initial candidate multiplicity before the local
-  vertex scan. The refitted multiplicity enters through `delta_N10`; it is the
-  maximum 10 ns multiplicity after correcting the refit-context hits to the
-  fitted vertex.
+- The stored `Nn` is the initial candidate multiplicity before the local
+  vertex scan. The refitted multiplicity enters through `delta_Nn`; it is the
+  maximum configured-window multiplicity after correcting the refit-context
+  hits to the fitted vertex.
 
 ### `trms`
 
-`trms` is the RMS of the corrected hit times in the initial best `N10` window.
+`trms` is the RMS of the corrected hit times in the initial best `Nn` window.
 It is computed around the mean corrected time of those hits.
 
 Why it helps:
 
 - True captures should remain compact after a reasonable time-of-flight
   correction.
-- Accidental coincidences can pass an `N10` count cut but often have a wider
+- Accidental coincidences can pass an `Nn` count cut but often have a wider
   corrected-time spread.
 
 Subtleties:
 
-- `trms` is evaluated on the same hit subset that defines the initial `N10`
+- `trms` is evaluated on the same hit subset that defines the initial `Nn`
   candidate.
 - A small `trms` is not sufficient by itself; localized electronics effects can
   also produce tight timing clusters, which is why topology and noise
@@ -131,11 +132,11 @@ fpdist = |xfit - v_prompt|
 ```
 
 The fitted vertex is obtained with a coarse+fine grid multilateration scan
-centered on `v_prompt`. The fit is sent the fixed original `N10` seed-hit
+centered on `v_prompt`. The fit is sent the fixed original `Nn` seed-hit
 cluster, scores trial vertices with median-centered corrected-time RMS, and may
 apply a fine-stage `dt` cut. After that vertex is chosen, the code recomputes
-the best 10 ns window in the local context at the fitted vertex to obtain the
-refitted `N10`.
+the best configured-width window in the local context at the fitted vertex to
+obtain the refitted `Nn`.
 
 Why it helps:
 
@@ -170,38 +171,38 @@ Why it helps:
 Subtleties:
 
 - Positive values mean the refit made the candidate more time-compact.
-- Negative values are possible if the best 10 ns window found after the vertex
-  refit is broader than the original seed window. The scan minimizes the fixed
-  seed-hit tRMS; it does not directly minimize the final-window tRMS.
+- Negative values are possible if the best configured-width window found after
+  the vertex refit is broader than the original seed window. The scan minimizes
+  the fixed seed-hit tRMS; it does not directly minimize the final-window tRMS.
 - The refit is evaluated only on hits near the original candidate in corrected
   time, controlled by `fit_context_ns`. If too few hits are in that context, the
   code falls back to all delayed-search hits for that prompt.
 
-### `delta_N10`
+### `delta_Nn`
 
-`delta_N10` measures how the best 10 ns multiplicity changes after the local
-vertex scan:
+`delta_Nn` measures how the best configured-window multiplicity changes after
+the local vertex scan:
 
 ```text
-refit_N10 = max over t0 of count(tcorr_i(xfit) in [t0, t0 + 10 ns))
-delta_N10 = refit_N10 - initial_N10
+refit_Nn = max over t0 of count(tcorr_i(xfit) in [t0, t0 + nn_window_ns))
+delta_Nn = refit_Nn - initial_Nn
 ```
 
-Here the maximum is over 10 ns timing windows at the already selected fitted
-vertex `xfit`, using the hits in the local refit context.
+Here the maximum is over configured-width timing windows at the already
+selected fitted vertex `xfit`, using the hits in the local refit context.
 
 Why it helps:
 
 - A better vertex can align photon time-of-flight corrections and collect more
-  hits into the 10 ns window.
+  hits into the configured timing window.
 - A candidate that cannot be improved spatially may be less capture-like.
 
 Subtleties:
 
-- The BDT also sees the original `N10`, so `delta_N10` should be interpreted as
+- The BDT also sees the original `Nn`, so `delta_Nn` should be interpreted as
   an improvement variable, not as the final cluster size by itself.
 - The fitted vertex minimizes the original seed cluster's tRMS; it does not
-  maximize `refit_N10` across trial vertices. Therefore `delta_N10` is signed
+  maximize `refit_Nn` across trial vertices. Therefore `delta_Nn` is signed
   and can be negative.
 
 ### `fwall`
@@ -239,7 +240,7 @@ Subtleties:
 Bpdist = |xBONSAI - xfit|
 ```
 
-`xfit` comes from the local N10 scan. `xBONSAI` comes from hk-BONSAI using
+`xfit` comes from the local Nn scan. `xBONSAI` comes from hk-BONSAI using
 calibrated hit times, charges, and WCSim tube IDs. Small values indicate that
 the two reconstruction methods found compatible vertices.
 
@@ -519,7 +520,7 @@ N300 = count(|t_corr_i(v_prompt) - candidate_center| <= 150 ns)
 
 Why it helps:
 
-- It measures nearby time activity around the compact `N10` candidate.
+- It measures nearby time activity around the compact `Nn` candidate.
 - A real capture can have a compact core, while high accidental pileup can add
   many surrounding hits in the wider window.
 
@@ -600,7 +601,7 @@ topology, and clustering observables.
 The main observable thresholds and geometry placeholders live in `extraction/config.py`
 and are exposed through the command-line interface:
 
-- Timing: `n10_window_ns`, `n10_cut`, `n300_window_ns`, `nmax200_window_ns`,
+- Timing: `nn_window_ns`, `nn_cut`, `n300_window_ns`, `nmax200_window_ns`,
   `nmax200_cut`, `continuous_noise_ns`.
 - Local vertex fit: `fit_context_ns`, `fit_wall_margin_cm`,
   `multilateration_xyz_bounds_cm`, `multilateration_coarse_step_cm`,

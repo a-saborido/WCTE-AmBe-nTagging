@@ -36,7 +36,7 @@ The extraction command is orchestrated by:
 - `prompt_tagging.py`: prompt scintillation peak finder.
 - `preselection_utils.py`: readout-level cleaning masks used before observables.
 - `geometry.py`: geofile loading, PMT `(slot, pos)` lookup, simple wall-distance proxy.
-- `observables/vertex.py`: N10 candidate finding and local vertex refit.
+- `observables/vertex.py`: Nn candidate finding and local vertex refit.
 - `observables/topology.py`: Cherenkov/topology observables.
 - `observables/noise.py`: charge, clustering, and local time-activity observables.
 - `plotting.py`: post-extraction truth-split observable probability densities.
@@ -60,7 +60,7 @@ extract_candidates(args)
 
 All extraction options are attached in `add_extract_args()`. Defaults come from
 `config.py`, so timing windows, double-grid multilateration settings, angular
-cuts, N10/Nmax200 cuts, and truth-label thresholds are all in one place.
+cuts, Nn/Nmax200 cuts, and truth-label thresholds are all in one place.
 
 The command above explicitly sets:
 
@@ -82,9 +82,9 @@ It first prepares analysis-wide objects:
 - `bonsai_fitter`: one process-wide `BonsaiVertexFitter`, initialized from the
   WCSim ROOT geometry carrier and checked against the text geofile.
 
-The local N10 multilateration and BONSAI are independent vertex reconstructions.
+The local Nn multilateration and BONSAI are independent vertex reconstructions.
 The double grid is centered on the fixed prompt vertex, fits only the original
-N10 burst, and then the pipeline recomputes the final N10 window at that fitted
+Nn burst, and then the pipeline recomputes the final Nn window at that fitted
 vertex. BONSAI uses measured PMT times, charges, and one-based WCSim tube IDs in
 a configurable 1.3 us corrected-time neighborhood around the candidate.
 
@@ -380,7 +380,7 @@ cross the 270 us window boundary and the 7.75 us gap naturally.
 
 ## 12. Local Nmax200 Burst Cleaning
 
-Before N10 candidate finding, the code applies a local burst veto using helpers
+Before Nn candidate finding, the code applies a local burst veto using helpers
 from `preselection_utils.py`.
 
 First, `max_count_in_window()` computes the diagnostic `nmax200` value:
@@ -437,34 +437,35 @@ tcorr_s = time_s - distance(PMT, prompt_vertex_cm) / c_water
 
 The water refractive index default is in `config.py`.
 
-This corrected time array is used to find compact delayed clusters with N10.
+This corrected time array is used to find compact delayed clusters with Nn.
 
-## 15. Greedy N10 Candidate Finding
+## 15. Greedy Nn Candidate Finding
 
-Delayed candidates are first found by `greedy_n10_candidates()` in
+Delayed candidates are first found by `greedy_nn_candidates()` in
 `observables/vertex.py`.
 
-N10 is the number of hits in the best `n10_window_ns` corrected-time window.
+`Nn` is the number of hits in the best configured-width corrected-time window,
+where the width is `nn_window_ns`.
 With the default:
 
 ```text
-DEFAULT_N10_WINDOW_NS = 10
-DEFAULT_N10_CUT = 5
+DEFAULT_NN_WINDOW_NS = 10
+DEFAULT_NN_CUT = 5
 ```
 
 The condition is:
 
 ```text
-N10 > 5
+Nn > 5
 ```
 
-So the raw candidate must have at least 6 hits in the best 10 ns corrected-time
-window.
+So the raw candidate must have at least 6 hits in the best configured-width
+corrected-time window. With the default settings, that window is 10 ns.
 
 The greedy algorithm works like this:
 
-- Find the densest 10 ns corrected-time window.
-- Keep it if `N10 > n10_cut`.
+- Find the densest `nn_window_ns` corrected-time window.
+- Keep it if `Nn > nn_cut`.
 - Remove those selected hits from the remaining pool.
 - Repeat until no more candidates pass or `max_candidates_per_prompt` is reached.
 
@@ -500,7 +501,7 @@ There is a fallback. If too few hits survive the context cut, the code uses all
 delayed-search hits so the refit remains defined:
 
 ```python
-if np.sum(context) < max(args.n10_cut + 1, 6):
+if np.sum(context) < max(args.nn_cut + 1, 6):
     context = np.ones_like(tcorr_s, dtype=bool)
 ```
 
@@ -509,13 +510,13 @@ if np.sum(context) < max(args.n10_cut + 1, 6):
 The vertex fit is performed by `refit_vertex_by_multilateration_grid()` in
 `observables/vertex.py`.
 
-The fit uses the same N10 seed burst selected at the prompt/source vertex:
+The fit uses the same Nn seed burst selected at the prompt/source vertex:
 
 - Run a coarse cubic grid centered on the prompt vertex.
 - Refine with a fine cubic grid around the best coarse point.
 - Score trial vertices with the median-centered corrected-time RMS of the fixed
-  N10 seed hits, with the optional fine-stage `dt` cut.
-- At the fitted vertex, find the new best N10 window using `best_window_indices()`.
+  Nn seed hits, with the optional fine-stage `dt` cut.
+- At the fitted vertex, find the new best Nn window using `best_window_indices()`.
 - Use that recomputed final window for all downstream observables and hit-set
   de-duplication.
 
@@ -525,7 +526,7 @@ are skipped.
 The refit returns:
 
 - `xfit`: fitted delayed-candidate vertex.
-- `n10p`: N10 after the refit.
+- `nn_refit`: Nn after the refit.
 - `best_context_loc`: hits selected by the best refit window.
 - `trmsp`: tRMS after the refit.
 
@@ -549,21 +550,21 @@ The preferred key is:
 sorted((source_entry, source_hit_index) for each final hit)
 ```
 
-The first de-duplication happens before the expensive vertex refit. The raw N10
-hit set returned by `greedy_n10_candidates()` is keyed and compared against
+The first de-duplication happens before the expensive vertex refit. The raw Nn
+hit set returned by `greedy_nn_candidates()` is keyed and compared against
 `seen_raw_candidate_hitsets`. If the same raw cluster has already been processed,
 the candidate is skipped and `raw_capture_candidates_skipped_by_hitset` is
 incremented.
 
 The second de-duplication happens after the vertex refit. The final fitted hit
 set is keyed and compared against `seen_candidate_hitsets`. This remains as a
-safety net for cases where different raw N10 seeds collapse onto the same final
+safety net for cases where different raw Nn seeds collapse onto the same final
 refit candidate.
 
 Together these catch repeated candidates caused by:
 
 - The same delayed cluster being found under multiple prompt candidates.
-- Different greedy N10 seeds refitting to the same final hit set.
+- Different greedy Nn seeds refitting to the same final hit set.
 - Neighboring anchor windows seeing the same following-window hits.
 
 Both tracking sets are created once in `extract_candidates()` and passed into
@@ -581,11 +582,11 @@ helpers from `observables/vertex.py`.
 
 The vertex-determination observable columns are defined in `config.py`:
 
-- `N10`: initial raw N10 before the vertex refit.
+- `Nn`: initial raw Nn before the vertex refit.
 - `trms`: initial raw tRMS before the vertex refit.
 - `fpdist`: distance between the fixed prompt vertex and fitted delayed vertex.
 - `delta_trms`: initial tRMS minus refit tRMS.
-- `delta_N10`: refit N10 minus initial N10.
+- `delta_Nn`: refit Nn minus initial Nn.
 - `fwall`: distance from fitted vertex to the current wall proxy.
 - `trms3`: smallest tRMS among any 3 final corrected hit times.
 - `trms6`: smallest tRMS among any 6 final corrected hit times.
@@ -702,7 +703,8 @@ Important bookkeeping columns include:
 - `prompt_tmean_ns`: mean corrected prompt-hit time relative to the earliest corrected hit.
 - `candidate_tcorr_center_ns`: raw candidate corrected-time center.
 - `candidate_raw_mean_time_ns`: raw mean time of final candidate hits.
-- `candidate_time_from_prompt_ns`: `candidate_raw_mean_time_ns - prompt_time_ns`.
+- `candidate_time_from_prompt_ns`: `candidate_raw_mean_time_ns - prompt_time_ns`;
+  also included in `OBSERVABLE_COLUMNS` as a timing observable.
 - `candidate_first_window_offset`, `candidate_last_window_offset`: whether final hits came from anchor or following windows.
 - `candidate_first_source_entry`, `candidate_last_source_entry`: original ROOT entries touched by final hits.
 
@@ -761,9 +763,9 @@ ntag_bdt_out/candidates.root
 ```
 
 The ROOT file contains one `THits` entry per final candidate. Hit branches are
-jagged arrays; scalar branches store the candidate label, fitted vertex, prompt
-time, and capture-hit counts. This layout can be used to train point-cloud
-methods.
+jagged arrays; scalar branches store the candidate label, fitted vertex,
+`fpdist`, prompt time, and capture-hit counts. This layout can be used to train
+point-cloud methods.
 
 One overlaid probability-density histogram per feature column is written to:
 
@@ -805,7 +807,7 @@ Preselection counters:
 - `prompt_candidates_with_capture_candidates`: prompt candidates that produced at least one raw capture candidate before final hit-set de-duplication.
 - `windows_with_capture_candidates`: anchor windows with at least one final written capture candidate.
 - `capture_candidates_total`: final de-duplicated candidate rows written.
-- `raw_capture_candidates_skipped_by_hitset`: repeated raw N10 hit clusters skipped before vertex fitting.
+- `raw_capture_candidates_skipped_by_hitset`: repeated raw Nn hit clusters skipped before vertex fitting.
 - `capture_candidates_deduplicated_by_hitset`: exact repeated final hit sets removed.
 - `capture_candidates_signal`: final candidates labeled signal by truth.
 - `capture_candidates_background`: final candidates labeled background by truth.
@@ -833,8 +835,8 @@ A useful mental trace is:
       -> prompt_tagging.py::find_prompt_candidates
       -> preselection_utils.py::dense_time_window_keep_mask
       -> preselection_utils.py::continuous_noise_keep_mask
-      -> observables/vertex.py::greedy_n10_candidates
-      -> candidate_preselection.py::candidate_hitset_key for raw N10 de-duplication
+      -> observables/vertex.py::greedy_nn_candidates
+      -> candidate_preselection.py::candidate_hitset_key for raw Nn de-duplication
       -> observables/vertex.py::refit_vertex_by_multilateration_grid
       -> candidate_preselection.py::candidate_hitset_key for final hit-set de-duplication
       -> observables/topology.py::calculate_cherenkov_topology_observables
@@ -850,7 +852,7 @@ look first are:
 - `prompt_candidates_total` and `prompt_candidates_with_capture_candidates` in the summary.
 - `raw_capture_candidates_skipped_by_hitset` in the summary.
 - `capture_candidates_deduplicated_by_hitset` in the summary.
-- N10 settings in `config.py`.
+- Nn settings in `config.py`.
 - `max_candidates_per_prompt` in `config.py`.
 - `fit_context_ns` and the `multilateration_*` grid settings in `config.py`.
 - `Nmax200` and continuous-noise counters in the summary.
@@ -860,5 +862,5 @@ If candidates are missing, first check:
 - `hits_missing_geometry`
 - `windows_failed_truth_length_match`
 - prompt cuts in `config.py`
-- `n10_cut`
+- `nn_cut`
 - whether the input ROOT file uses the expected time and charge branches

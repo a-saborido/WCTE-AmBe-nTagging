@@ -71,7 +71,7 @@ def continuous_noise_keep_mask(
 
     This readout-cleaning step is applied before candidate finding. When one
     tube fires repeatedly inside the coincidence window, both hits in each close
-    pair are discarded. That avoids artificial N10 candidates from afterpulses
+    pair are discarded. That avoids artificial Nn candidates from afterpulses
     or unstable channels, but the window is kept configurable because real
     photons can occasionally hit the same PMT more than once.
     """

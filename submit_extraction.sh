@@ -24,8 +24,8 @@ LOGDIR="${REPO_DIR}/logs"
 CONDA_SH=/scicomp/builds/Rocky/8.7/Common/software/Miniforge3/24.11.3-2/etc/profile.d/conda.sh
 CONDA_ENV=/scratch/saborido/conda-env/caverns
 
-INPUTDIR="${REPO_DIR}/data/wcte_ambe_mc_plus_clean_bkg_pe_FILTERED.root"
-OUTDIR="${REPO_DIR}/outputs/ntag_bdt_out_FILTERED"
+INPUTDIR="${REPO_DIR}/data/wcte_ambe_mc_plus_clean_bkg_pe_FILTERED_FILTERED_TRAIN.root"
+OUTDIR="${REPO_DIR}/outputs/ntag_bdt_out_FILTERED_FILTERED_TRAIN_new"
 
 mkdir -p "${LOGDIR}" "${OUTDIR}"
 
